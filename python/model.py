@@ -1,8 +1,8 @@
-import torch
 from collections import OrderedDict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 def make_layers(block, no_relu_layers):
     layers = []
@@ -24,6 +24,11 @@ def make_layers(block, no_relu_layers):
 class bodypose_model(nn.Module):
     def __init__(self):
         super(bodypose_model, self).__init__()
+        self.boxsize = [184]
+        self.stride = 8
+        self.padValue = 128
+        self.thre1 = 0.1
+        self.thre2 = 0.05
 
         # these layers have no relu layer
         no_relu_layers = ['conv5_5_CPM_L1', 'conv5_5_CPM_L2', 'Mconv7_stage2_L1',\
@@ -46,7 +51,6 @@ class bodypose_model(nn.Module):
                   'conv4_2': [512, 512, 3, 1, 1],
                   'conv4_3_CPM': [512, 256, 3, 1, 1],
                   'conv4_4_CPM': [256, 128, 3, 1, 1]})
-
 
         # Stage 1
         block1_1 = OrderedDict({'conv5_1_CPM_L1': [128, 128, 3, 1, 1],
@@ -102,33 +106,72 @@ class bodypose_model(nn.Module):
         self.model5_2 = blocks['block5_2']
         self.model6_2 = blocks['block6_2']
 
+    def normalize_img(self, x):
+        shape_pymd = [(bs, self.stride * (x.size(3) / x.size(2) * bs) // self.stride)
+                 for bs in self.boxsize]
+        x = [F.interpolate(x, shape, mode="bilinear") / 256 - 0.5 for shape in shape_pymd]
+        return x
 
     def forward(self, x):
+        b, c, h, w = x.shape
+        heatmap_avg = torch.zeros(c, h, w, 19)
+        paf_avg = torch.zeros(c, h, w, 38)
+        img_pyramid = self.normalize_img(x)
 
-        out1 = self.model0(x)
+        for x in img_pyramid:
+            out1 = self.model0(x)
 
-        out1_1 = self.model1_1(out1)
-        out1_2 = self.model1_2(out1)
-        out2 = torch.cat([out1_1, out1_2, out1], 1)
+            out1_1 = self.model1_1(out1)
+            out1_2 = self.model1_2(out1)
+            out2 = torch.cat([out1_1, out1_2, out1], 1)
 
-        out2_1 = self.model2_1(out2)
-        out2_2 = self.model2_2(out2)
-        out3 = torch.cat([out2_1, out2_2, out1], 1)
+            out2_1 = self.model2_1(out2)
+            out2_2 = self.model2_2(out2)
+            out3 = torch.cat([out2_1, out2_2, out1], 1)
 
-        out3_1 = self.model3_1(out3)
-        out3_2 = self.model3_2(out3)
-        out4 = torch.cat([out3_1, out3_2, out1], 1)
+            out3_1 = self.model3_1(out3)
+            out3_2 = self.model3_2(out3)
+            out4 = torch.cat([out3_1, out3_2, out1], 1)
 
-        out4_1 = self.model4_1(out4)
-        out4_2 = self.model4_2(out4)
-        out5 = torch.cat([out4_1, out4_2, out1], 1)
+            out4_1 = self.model4_1(out4)
+            out4_2 = self.model4_2(out4)
+            out5 = torch.cat([out4_1, out4_2, out1], 1)
 
-        out5_1 = self.model5_1(out5)
-        out5_2 = self.model5_2(out5)
-        out6 = torch.cat([out5_1, out5_2, out1], 1)
+            out5_1 = self.model5_1(out5)
+            out5_2 = self.model5_2(out5)
+            out6 = torch.cat([out5_1, out5_2, out1], 1)
 
-        out6_1 = self.model6_1(out6)
-        out6_2 = self.model6_2(out6)
+            heatmap = self.model6_1(out6)
+            paf = self.model6_2(out6)
+
+            heatmap = F.interpolate(heatmap, (h, w), mode="bilinear")
+            paf = F.interpolate(paf, (h, w), mode="bilinear")
+
+            heatmap_avg += heatmap_avg + heatmap / len(img_pyramid)
+            paf_avg += paf / len(img_pyramid)
+
+        for part in range(18):
+            map_ori = heatmap_avg[:, :, part]
+            one_heatmap = gaussian_filter(map_ori, sigma=3)
+
+            map_left = np.zeros(one_heatmap.shape)
+            map_left[1:, :] = one_heatmap[:-1, :]
+            map_right = np.zeros(one_heatmap.shape)
+            map_right[:-1, :] = one_heatmap[1:, :]
+            map_up = np.zeros(one_heatmap.shape)
+            map_up[:, 1:] = one_heatmap[:, :-1]
+            map_down = np.zeros(one_heatmap.shape)
+            map_down[:, :-1] = one_heatmap[:, 1:]
+
+            peaks_binary = np.logical_and.reduce(
+                (one_heatmap >= map_left, one_heatmap >= map_right, one_heatmap >= map_up, one_heatmap >= map_down, one_heatmap > thre1))
+            peaks = list(zip(np.nonzero(peaks_binary)[1], np.nonzero(peaks_binary)[0]))  # note reverse
+            peaks_with_score = [x + (map_ori[x[1], x[0]],) for x in peaks]
+            peak_id = range(peak_counter, peak_counter + len(peaks))
+            peaks_with_score_and_id = [peaks_with_score[i] + (peak_id[i],) for i in range(len(peak_id))]
+
+            all_peaks.append(peaks_with_score_and_id)
+            peak_counter += len(peaks)
 
         return out6_1, out6_2
 

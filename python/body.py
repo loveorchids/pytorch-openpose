@@ -20,6 +20,7 @@ class Body(object):
         self.model.eval()
 
     def __call__(self, oriImg):
+        one_heatmap = gaussian_filter(oriImg, sigma=3)
         # scale_search = [0.5, 1.0, 1.5, 2.0]
         scale_search = [0.5]
         boxsize = 368
@@ -43,7 +44,7 @@ class Body(object):
                 data = data.cuda()
             # data = data.permute([2, 0, 1]).unsqueeze(0).float()
             with torch.no_grad():
-                Mconv7_stage6_L1, Mconv7_stage6_L2 = self.model(data)
+                Mconv7_stage6_L1, Mconv7_stage6_L2 = self.model(oriImg)
             Mconv7_stage6_L1 = Mconv7_stage6_L1.cpu().numpy()
             Mconv7_stage6_L2 = Mconv7_stage6_L2.cpu().numpy()
 
@@ -61,7 +62,7 @@ class Body(object):
             paf = cv2.resize(paf, (oriImg.shape[1], oriImg.shape[0]), interpolation=cv2.INTER_CUBIC)
 
             heatmap_avg += heatmap_avg + heatmap / len(multiplier)
-            paf_avg += + paf / len(multiplier)
+            paf_avg += paf / len(multiplier)
 
         all_peaks = []
         peak_counter = 0
