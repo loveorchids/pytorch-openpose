@@ -5,3 +5,8 @@ hiddenlayer/
 .ipynb_checkpoints/
 __pycache__
 *.prototxt
+*.jpeg
+*.jpg
+*.JPG
+*.png
+*.PNG

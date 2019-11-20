@@ -1,5 +1,6 @@
 from collections import OrderedDict
-
+import numpy as np
+import scipy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -29,6 +30,9 @@ class bodypose_model(nn.Module):
         self.padValue = 128
         self.thre1 = 0.1
         self.thre2 = 0.05
+        n = np.zeros((25, 25))
+        n[12, 12] = 1
+        self.gaussian_kernel = torch.from_numpy(scipy.ndimage.gaussian_filter(n, sigma=3))
 
         # these layers have no relu layer
         no_relu_layers = ['conv5_5_CPM_L1', 'conv5_5_CPM_L2', 'Mconv7_stage2_L1',\

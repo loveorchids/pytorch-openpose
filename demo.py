@@ -99,7 +99,7 @@ def Eval_local_patch(source, destiny):
                     crop_from_img(oriImg, coords, crop_size, save_path)
 
 def demo():
-    for i, person_img in enumerate(sorted(glob.glob("./images/*.jpg"))):
+    for i, person_img in enumerate(sorted(glob.glob("./images/*.jpeg"))):
         print(i)
         # Skip some frames
         img = cv2.imread(person_img)  # B,G,R order

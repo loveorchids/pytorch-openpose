@@ -20,6 +20,7 @@ class Body(object):
         self.model.eval()
 
     def __call__(self, oriImg):
+        a = gaussian_filter(np.arange(5), sigma=3)
         one_heatmap = gaussian_filter(oriImg, sigma=3)
         # scale_search = [0.5, 1.0, 1.5, 2.0]
         scale_search = [0.5]
