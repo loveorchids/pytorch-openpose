@@ -20,8 +20,8 @@ class Body(object):
         self.model.eval()
 
     def __call__(self, oriImg):
-        a = gaussian_filter(np.arange(5), sigma=3)
-        one_heatmap = gaussian_filter(oriImg, sigma=3)
+        #a = gaussian_filter(np.arange(5), sigma=3)
+        #one_heatmap = gaussian_filter(oriImg, sigma=3)
         # scale_search = [0.5, 1.0, 1.5, 2.0]
         scale_search = [0.5]
         boxsize = 368
@@ -45,7 +45,7 @@ class Body(object):
                 data = data.cuda()
             # data = data.permute([2, 0, 1]).unsqueeze(0).float()
             with torch.no_grad():
-                Mconv7_stage6_L1, Mconv7_stage6_L2 = self.model(oriImg)
+                Mconv7_stage6_L1, Mconv7_stage6_L2 = self.model(data)
             Mconv7_stage6_L1 = Mconv7_stage6_L1.cpu().numpy()
             Mconv7_stage6_L2 = Mconv7_stage6_L2.cpu().numpy()
 
@@ -67,6 +67,7 @@ class Body(object):
 
         all_peaks = []
         peak_counter = 0
+        lst_peaks = []
 
         for part in range(18):
             map_ori = heatmap_avg[:, :, part]
@@ -84,6 +85,7 @@ class Body(object):
             peaks_binary = np.logical_and.reduce(
                 (one_heatmap >= map_left, one_heatmap >= map_right, one_heatmap >= map_up, one_heatmap >= map_down, one_heatmap > thre1))
             peaks = list(zip(np.nonzero(peaks_binary)[1], np.nonzero(peaks_binary)[0]))  # note reverse
+            lst_peaks.append(peaks)
             peaks_with_score = [x + (map_ori[x[1], x[0]],) for x in peaks]
             peak_id = range(peak_counter, peak_counter + len(peaks))
             peaks_with_score_and_id = [peaks_with_score[i] + (peak_id[i],) for i in range(len(peak_id))]

@@ -22,6 +22,26 @@ def make_layers(block, no_relu_layers):
 
     return nn.Sequential(OrderedDict(layers))
 
+
+class GaussianFilter(nn.Module):
+    def __init__(self, channel=18, pad=12, sigma=3):
+        super().__init__()
+        n = np.zeros((pad * 2 + 1, pad * 2 + 1))
+        n[pad, pad] = 1
+        kernel = torch.from_numpy(
+            scipy.ndimage.gaussian_filter(n, sigma=sigma)
+        ).float().requires_grad_(False)
+        self.kernel = kernel.unsqueeze(0).unsqueeze(0).repeat(channel, 1, 1, 1)
+        self.filter = nn.Conv2d(channel, channel, pad * 2 + 1, padding=0,
+                                groups=channel, bias=False)
+        self.filter.weight = torch.nn.Parameter(kernel)
+        self.padding = nn.ReflectionPad2d(pad)
+
+    def forward(self, x):
+        x = self.padding(x)
+        x = self.filter(x)
+        return x
+
 class bodypose_model(nn.Module):
     def __init__(self):
         super(bodypose_model, self).__init__()
@@ -30,9 +50,7 @@ class bodypose_model(nn.Module):
         self.padValue = 128
         self.thre1 = 0.1
         self.thre2 = 0.05
-        n = np.zeros((25, 25))
-        n[12, 12] = 1
-        self.gaussian_kernel = torch.from_numpy(scipy.ndimage.gaussian_filter(n, sigma=3))
+        self.gaussian_filter = GaussianFilter()
 
         # these layers have no relu layer
         no_relu_layers = ['conv5_5_CPM_L1', 'conv5_5_CPM_L2', 'Mconv7_stage2_L1',\
@@ -117,6 +135,33 @@ class bodypose_model(nn.Module):
         return x
 
     def forward(self, x):
+        out1 = self.model0(x)
+
+        out1_1 = self.model1_1(out1)
+        out1_2 = self.model1_2(out1)
+        out2 = torch.cat([out1_1, out1_2, out1], 1)
+
+        out2_1 = self.model2_1(out2)
+        out2_2 = self.model2_2(out2)
+        out3 = torch.cat([out2_1, out2_2, out1], 1)
+
+        out3_1 = self.model3_1(out3)
+        out3_2 = self.model3_2(out3)
+        out4 = torch.cat([out3_1, out3_2, out1], 1)
+
+        out4_1 = self.model4_1(out4)
+        out4_2 = self.model4_2(out4)
+        out5 = torch.cat([out4_1, out4_2, out1], 1)
+
+        out5_1 = self.model5_1(out5)
+        out5_2 = self.model5_2(out5)
+        out6 = torch.cat([out5_1, out5_2, out1], 1)
+
+        heatmap = self.model6_1(out6)
+        paf = self.model6_2(out6)
+        return heatmap, paf
+
+    def forward_parallel(self, x):
         b, c, h, w = x.shape
         heatmap_avg = torch.zeros(c, h, w, 19)
         paf_avg = torch.zeros(c, h, w, 38)
@@ -154,18 +199,27 @@ class bodypose_model(nn.Module):
             heatmap_avg += heatmap_avg + heatmap / len(img_pyramid)
             paf_avg += paf / len(img_pyramid)
 
+        one_heatmap = self.gaussian_filter(heatmap_avg)
+        map_left = np.zeros(one_heatmap.shape)
+        map_left[:, :, 1:, :] = one_heatmap[:, :, :-1, :]
+        map_right = np.zeros(one_heatmap.shape)
+        map_right[:, :, :-1, :] = one_heatmap[:, :, 1:, :]
+        map_up = np.zeros(one_heatmap.shape)
+        map_up[:, :, :, 1:] = one_heatmap[:, :, :, :-1]
+        map_down = np.zeros(one_heatmap.shape)
+        map_down[:, :, :, :-1] = one_heatmap[:, :, :, 1:]
+
+        peaks_binary = one_heatmap >= map_left * one_heatmap >= map_right * \
+                       one_heatmap >= map_up * one_heatmap >= map_down * \
+                       one_heatmap > self.thre1
+        peaks = peaks_binary.nonzero()
+
+
         for part in range(18):
             map_ori = heatmap_avg[:, :, part]
             one_heatmap = gaussian_filter(map_ori, sigma=3)
 
-            map_left = np.zeros(one_heatmap.shape)
-            map_left[1:, :] = one_heatmap[:-1, :]
-            map_right = np.zeros(one_heatmap.shape)
-            map_right[:-1, :] = one_heatmap[1:, :]
-            map_up = np.zeros(one_heatmap.shape)
-            map_up[:, 1:] = one_heatmap[:, :-1]
-            map_down = np.zeros(one_heatmap.shape)
-            map_down[:, :-1] = one_heatmap[:, 1:]
+
 
             peaks_binary = np.logical_and.reduce(
                 (one_heatmap >= map_left, one_heatmap >= map_right, one_heatmap >= map_up, one_heatmap >= map_down, one_heatmap > thre1))

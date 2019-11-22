@@ -99,7 +99,7 @@ def Eval_local_patch(source, destiny):
                     crop_from_img(oriImg, coords, crop_size, save_path)
 
 def demo():
-    for i, person_img in enumerate(sorted(glob.glob("./images/*.jpeg"))):
+    for i, person_img in enumerate(sorted(glob.glob("./images/*.jpg"))):
         print(i)
         # Skip some frames
         img = cv2.imread(person_img)  # B,G,R order
@@ -109,20 +109,22 @@ def demo():
         except ZeroDivisionError:
             continue
         canvas = copy.deepcopy(img)
-        canvas, coords = util.draw_bodypose(canvas, candidate, subset, stickwidth=2, crop_size=crop_size, draw=True)
+        canvas, coords = util.draw_bodypose(canvas, candidate, subset, crop_size=crop_size, draw=True)
         cv2.imwrite(os.path.expanduser("~/Pictures/tmp_%s.jpg"%str(i).zfill(2)), canvas)
 
 def create_raw_mat(mat_dir, prefix):
-    if prefix is not None:
+    if prefix is None:
         prefix = ""
     else:
         prefix = prefix + "_"
     raw_candidate = {}
     raw_subset = {}
-    for i, person_img in enumerate(sorted(glob.glob("./images/*.jpg"))):
+    img_dir = os.path.expanduser("~/Documents/test_frames/*.jpg")
+    for i, person_img in enumerate(sorted(glob.glob(img_dir))):
         if i % 20 == 0:
             print(i)
         name = person_img[person_img.rfind("/")+1:-4]
+
         #p_id = int(name[:2])
         #angle = name[3:]
         #print(p_id, angle)
@@ -136,6 +138,10 @@ def create_raw_mat(mat_dir, prefix):
         # The second dim of sebset represent the joint of that person
         if len(subset) > 1:
             print("We happen to find 2 or more persons")
+            continue
+        if len(candidate) == 0:
+            continue
+        if len(subset) == 0:
             continue
         candidate = np.concatenate([candidate, np.zeros([1, 4])], axis=0)
         raw_candidate.update({name: candidate})
@@ -161,7 +167,7 @@ if __name__ == '__main__':
     #Eval_local_patch(eval_folder, eval_destiny)
     #create_facing_mat(mat_dir)
     demo()
-    #create_raw_mat(mat_dir, prefix="test")
+    #create_raw_mat(mat_dir, prefix="pt_train")
     #test_parallel()
 
 
